@@ -4,7 +4,7 @@ import { StatusType, StatusState } from '../types';
 import { Button } from './ui/Button';
 import { StatusDisplay } from './ui/StatusDisplay';
 
-const DEFAULT_API_KEY = "sk-ff625da5693c4fbe852f9c10deea29f8";
+const DEFAULT_API_KEY = "请输入apikey";
 const DEFAULT_FORMAT = `请将1-12题按照下列格式重新整理：1.题目中代码部分要按markdown格式整理。2.删除选项中ABCD。3.题目前有情景文字的，要加上。具体格式如下：
 
 （可能包含的情景文字）
