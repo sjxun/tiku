@@ -1,48 +1,59 @@
-// This service now runs entirely locally using JavaScript logic instead of calling an API.
+// Service for processing exam data.
+// Feature 1: Online (DeepSeek API)
+// Feature 2 & 3: Offline (Local JS Logic)
 
-export const extractQuestionsFromText = async (content: string): Promise<string> => {
-  // Simulate processing time
-  await new Promise(resolve => setTimeout(resolve, 500));
+export const extractQuestionsFromText = async (apiKey: string, content: string, formatReq: string): Promise<string> => {
+  if (!apiKey) throw new Error("请输入 DeepSeek API Key");
+  if (!content) throw new Error("请输入内容");
+
+  const SYSTEM_PROMPT = `你是一个智能试卷处理助手，能够从试卷中提取题目并处理答案。你需要：
+1. 根据用户提供的内容和格式要求，提取指定范围的题目
+2. 如果用户提供了答案，根据答案格式要求处理并输出结果
+3. 严格按照用户要求的格式输出，不要添加任何额外内容
+4. 确保输出的内容准确无误，符合用户的预期`;
+
+  const userPrompt = `${content}\n\n${formatReq}`;
 
   try {
-    // 1. Basic cleanup
-    let cleanContent = content.trim();
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: userPrompt }
+            ],
+            stream: false
+        })
+    });
 
-    // 2. Try to find the start of Question 1 and end of Question 12
-    // Regex heuristics: Look for "1." or "1、" or "(1)" at the start of a line
-    // Look for "13." or "13、" to end.
-    
-    // Note: This is a heuristic parser. Without AI, it relies on standard formatting.
-    const startRegex = /(?:^|\n)\s*1[.,、]([\s\S]*)/;
-    const endRegex = /(?:^|\n)\s*13[.,、]/;
-
-    const startMatch = cleanContent.match(startRegex);
-    
-    let extracted = cleanContent;
-    
-    if (startMatch) {
-       extracted = "1." + startMatch[1];
-       // Cut off at 13
-       const endMatch = extracted.match(endRegex);
-       if (endMatch) {
-           extracted = extracted.substring(0, endMatch.index);
-       }
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`API 请求失败: ${response.status} - ${errText}`);
     }
 
-    return extracted.trim();
+    const data = await response.json();
+    if (data.choices && data.choices.length > 0) {
+        return data.choices[0].message.content;
+    } else {
+        throw new Error("API 返回内容为空");
+    }
+
   } catch (error) {
-    console.error("Error extracting questions:", error);
-    return content; // Fallback to original
+    console.error("API Error:", error);
+    throw error;
   }
 };
 
 export const processAnswersText = async (answers: string, format: string): Promise<string> => {
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // Local processing
+  await new Promise(resolve => setTimeout(resolve, 300));
 
   try {
-    // Basic implementation for standard answer string "ABCDE..."
-    // Maps each character to a question number 1..N
-    
     // Remove spaces
     const cleanAnswers = answers.replace(/\s+/g, '');
     let yamlOutput = "type: objective\nanswers:\n";
@@ -67,6 +78,7 @@ export const processAnswersText = async (answers: string, format: string): Promi
 };
 
 export const generateDualTemplates = async (content: string): Promise<{ template1: string, template2: string }> => {
+  // Local processing
   await new Promise(resolve => setTimeout(resolve, 300));
 
   let template1Lines: string[] = [];
@@ -83,7 +95,6 @@ export const generateDualTemplates = async (content: string): Promise<{ template
   const lines = normalized.split('\n').filter(l => l.trim());
 
   // Regex to identify Question start: e.g., (1), (2)
-  // Ignoring big question numbers like "13" at the start
   const questionStartRegex = /^(?:\d+)?\s*\((\d+)\)(.*)/;
 
   let currentQuestion = { id: '', text: '' };
@@ -92,84 +103,66 @@ export const generateDualTemplates = async (content: string): Promise<{ template
   const processQuestionBlock = (id: string, text: string) => {
     let t1Line = `(${id})`;
     
-    // Unicode range for circle numbers ① to ⑳ is \u2460-\u2473
-    // We also want to capture the content following the circle number
     let hasCircles = text.match(/[①-⑳]/);
 
     if (hasCircles) {
-        // Split text by circle numbers, capturing the delimiter
-        // Example: "Text ① content1 ② content2" -> ["Text ", "①", " content1 ", "②", " content2"]
+        // Split text by circle numbers
         let parts = text.split(/([①-⑳])/);
         
-        // Iterate through parts
         for (let i = 0; i < parts.length; i++) {
             if (parts[i].match(/[①-⑳]/)) {
                 const marker = parts[i];
-                // The content is the next part. 
-                // We need to be careful: the split might leave empty strings if circles are adjacent (unlikely)
-                // We grab everything until the next marker (which is handled by the split logic naturally)
                 let content = parts[i+1] || "";
-                
-                // Advance loop since we consumed the content
                 i++; 
                 
                 // --- Logic for Open Questions ---
-                // Count Chinese characters
                 const chineseCount = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
                 
-                if (chineseCount >= 6) {
+                if (chineseCount >= 10) {
                     t1Line += `${marker}不做`;
-                    // Do not increment globalCounter, do not add to Template 2
                 } else {
                     t1Line += `${marker}{{ input(${globalCounter}) }}`;
                     
                     // --- Logic for Template 2 ---
-                    // Extract score: (2 分) or (1 分)
                     const scoreMatch = content.match(/\((\d+)\s*分\)/);
-                    const score = scoreMatch ? parseInt(scoreMatch[1]) : 2; // Default to 2 if not found, based on context
+                    const score = scoreMatch ? parseInt(scoreMatch[1]) : 2;
                     
-                    // Clean content: remove score and trim
                     const cleanContent = content.replace(/\(\d+\s*分\)/, '').trim();
                     const key = globalCounter.toString();
                     
                     let ansEntry: any = {};
                     
-                    // Logic: "或" means multiple valid answers
                     if (cleanContent.includes('或')) {
                         const options = cleanContent.split('或').map(s => s.trim());
                         options.forEach(opt => {
                             if(opt) ansEntry[opt] = score;
                         });
                     } 
-                    // Logic: Multi-select "BD" (heuristic: Uppercase only, len > 1, len < 5)
                     else if (/^[A-Z]+$/.test(cleanContent) && cleanContent.length > 1 && cleanContent.length < 5) {
-                        // Add full combination
                         ansEntry[cleanContent] = score;
-                        // Add individual letters as partial score (1 point per letter logic from prompt)
                         for (let char of cleanContent) {
                             ansEntry[char] = 1; 
                         }
                     } else {
-                        // Single answer
                         if(cleanContent) ansEntry[cleanContent] = score;
                     }
                     
-                    template2Obj.answers[key] = ansEntry;
+                    if (Object.keys(ansEntry).length > 0) {
+                       template2Obj.answers[key] = ansEntry;
+                    }
                     globalCounter++;
                 }
             }
         }
     } else {
-        // No circle numbers, treat the whole text as one input
         const chineseCount = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
-        if (chineseCount >= 6) {
+        if (chineseCount >= 10) {
             t1Line += `不做`;
         } else {
             t1Line += `{{ input(${globalCounter}) }}`;
             
-            // T2 Logic
             const scoreMatch = text.match(/\((\d+)\s*分\)/);
-            const score = scoreMatch ? parseInt(scoreMatch[1]) : 1; // Default 1 for single letters usually
+            const score = scoreMatch ? parseInt(scoreMatch[1]) : 1;
             const cleanContent = text.replace(/\(\d+\s*分\)/, '').trim();
             const key = globalCounter.toString();
             
@@ -187,7 +180,9 @@ export const generateDualTemplates = async (content: string): Promise<{ template
                 if(cleanContent) ansEntry[cleanContent] = score;
             }
             
-            template2Obj.answers[key] = ansEntry;
+            if (Object.keys(ansEntry).length > 0) {
+                template2Obj.answers[key] = ansEntry;
+            }
             globalCounter++;
         }
     }
@@ -199,20 +194,16 @@ export const generateDualTemplates = async (content: string): Promise<{ template
   for (let line of lines) {
     const match = line.match(questionStartRegex);
     if (match) {
-        // If we were processing a question, finish it
         if (currentQuestion.id) {
             processQuestionBlock(currentQuestion.id, currentQuestion.text);
         }
-        // Start new question
         currentQuestion = { id: match[1], text: match[2] };
     } else {
-        // Continuation of previous line (e.g. content wrapped)
         if (currentQuestion.id) {
             currentQuestion.text += " " + line;
         }
     }
   }
-  // Process the very last question
   if (currentQuestion.id) {
      processQuestionBlock(currentQuestion.id, currentQuestion.text);
   }
@@ -228,7 +219,7 @@ export const generateDualTemplates = async (content: string): Promise<{ template
   }
 
   return {
-    template1: template1Lines.join('\n\n'), // Empty line between sections
+    template1: template1Lines.join('\n\n'),
     template2: yaml
   };
 };

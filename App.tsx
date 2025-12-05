@@ -11,10 +11,10 @@ const App: React.FC = () => {
     <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
       <header className="text-center mb-10">
         <h1 className="text-3xl font-extrabold text-gray-900 sm:text-4xl tracking-tight mb-2">
-          PDF 试卷题目提取器 (本地版)
+          PDF 试卷题目提取器
         </h1>
         <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-          本地智能识别试卷内容，无需联网即可提取题目与格式化答案
+          功能1为联网智能提取，功能2/3为本地快速处理
         </p>
       </header>
 
@@ -74,7 +74,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="mt-10 text-center text-gray-400 text-sm">
-        <p>Offline Mode - No Data Sent to Server</p>
+        <p>Feature 1: Online Mode (DeepSeek API) | Features 2 & 3: Local Mode</p>
       </footer>
     </div>
   );
